@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Genomic Analysis Platform</title>
+    <!-- Custom Styles -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+    .modal {
+        display: none;
+        position: fixed;
+        z-index: 1000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0,0,0,0.5);
+        backdrop-filter: blur(5px);
+        align-items: center;
+        justify-content: center;
+    }
+    .modal.show {
+        display: flex;
+    }
+    .modal-content {
+        background: var(--glass-bg);
+        border: 1px solid var(--glass-border);
+        backdrop-filter: blur(16px);
+        padding: 2rem;
+        border-radius: var(--radius);
+        width: 90%;
+        max-width: 500px;
+        position: relative;
+        box-shadow: 0 25px 50px -12px rgba(0,0,0,0.6);
+    }
+    .close-modal {
+        position: absolute;
+        top: 1rem;
+        right: 1.5rem;
+        color: var(--text-muted);
+        font-size: 1.5rem;
+        cursor: pointer;
+    }
+    .close-modal:hover { color: white; }
+    </style>
+</head>
+<body>
+    <div style="position: fixed; top: 1.5rem; right: 1.5rem; z-index: 1000; display: flex; gap: 1rem;">
+        <a href="/training" class="btn btn-primary btn-small" style="background: linear-gradient(135deg, #8b5cf6, #3b82f6); border:none; box-shadow: 0 4px 15px rgba(139, 92, 246, 0.4);">
+            ⚛ Train Quantum Model
+        </a>
+        <button type="button" onclick="document.getElementById('settings-modal').classList.add('show')" class="btn btn-outline btn-small" style="background: var(--glass-bg); backdrop-filter: blur(10px);">
+            ⚙ LLM Settings {% if api_key_set %}<span style="color:var(--success); margin-left:4px;">●</span>{% endif %}
+        </button>
+    </div>
+    <div class="container">
+        <h1>Genomic Analysis Platform</h1>
+
+        <div id="settings-modal" class="modal">
+            <div class="modal-content">
+                <span class="close-modal" onclick="document.getElementById('settings-modal').classList.remove('show')">&times;</span>
+                <h2 style="margin-top: 0;">API Configuration</h2>
+                <form action="/settings" method="post">
+                    <div class="form-group">
+                        <label>Select LLM Provider</label>
+                        <select name="llm_provider" required>
+                            <option value="gemini" {% if llm_provider == 'gemini' %}selected{% endif %}>Google Gemini (Recommended)</option>
+                            <option value="openai" {% if llm_provider == 'openai' %}selected{% endif %}>OpenAI</option>
+                            <option value="anthropic" {% if llm_provider == 'anthropic' %}selected{% endif %}>Anthropic Claude</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>API Key</label>
+                        <input type="password" name="api_key" placeholder="Enter your provider API Key" style="width: 100%; box-sizing: border-box;">
+                        <small style="color: var(--text-muted); margin-top: 0.5rem;">Leave blank to use environment variables or offline fallback.</small>
+                    </div>
+                    <div style="text-align: right; margin-top: 2rem;">
+                        <button type="submit" class="btn btn-primary btn-small">Save Settings</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <form action="/analysis" method="post" enctype="multipart/form-data">
+            <div class="glass-card">
+                <h2>Patient Information</h2>
+                <div class="grid">
+                    <div class="form-group">
+                        <label for="name">Full Name</label>
+                        <input type="text" id="name" name="name" placeholder="e.g., John Doe" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="age">Age</label>
+                        <input type="number" id="age" name="age" placeholder="e.g., 55" required min="0">
+                    </div>
+                    <div class="form-group">
+                        <label for="gender">Gender</label>
+                        <select id="gender" name="gender" required>
+                            <option value="male">Male</option>
+                            <option value="female">Female</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="condition">Clinical Condition</label>
+                        <input type="text" id="condition" name="condition" placeholder="e.g., Lung Adenocarcinoma" required>
+                    </div>
+                </div>
+            </div>
+
+            <div class="glass-card">
+                <h2>Genetic Data</h2>
+                <div class="form-group">
+                    <label>Upload VCF File (Recommended)</label>
+                    <input type="file" name="vcf_file">
+                </div>
+                
+                <div class="divider"><span>OR</span></div>
+
+                <h3>Enter Variants Manually</h3>
+                <div id="variants"></div>
+                <div style="margin-top: 1.5rem;">
+                    <button type="button" class="btn btn-outline btn-small" onclick="addVariant()">
+                        + Add Variant
+                    </button>
+                </div>
+            </div>
+
+            <div class="btn-group">
+                <button type="submit" class="btn btn-primary">
+                    Start AI Analysis
+                </button>
+                <button type="button" class="btn btn-outline" onclick="loadSampleData()">
+                    Load Sample Data
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        function createVariantInput() {
+            const id = Date.now();
+            const variantDiv = document.createElement('div');
+            variantDiv.className = 'variant-row';
+            variantDiv.innerHTML = `
+                <div class="form-group" style="margin-bottom:0;">
+                    <label for="gene-${id}">Gene</label>
+                    <input id="gene-${id}" type="text" name="gene[]" placeholder="e.g., EGFR">
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label for="hgvs-${id}">HGVS Notation</label>
+                    <input id="hgvs-${id}" type="text" name="hgvs[]" placeholder="e.g., p.L858R">
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label for="zygosity-${id}">Zygosity</label>
+                    <select id="zygosity-${id}" name="zygosity[]">
+                        <option value="heterozygous">Heterozygous</option>
+                        <option value="homozygous">Homozygous</option>
+                    </select>
+                </div>
+            `;
+            return variantDiv;
+        }
+
+        function addVariant() {
+            document.getElementById('variants').appendChild(createVariantInput());
+        }
+
+        function loadSampleData() {
+            const datasets = [
+                {
+                    name: 'Jane Smith', age: 62, gender: 'female', condition: 'Stage IV Non-Small Cell Lung Cancer',
+                    variants: [
+                        { gene: 'EGFR', hgvs: 'p.L858R', zygosity: 'heterozygous' },
+                        { gene: 'EGFR', hgvs: 'p.T790M', zygosity: 'heterozygous' },
+                        { gene: 'TP53', hgvs: 'p.R273H', zygosity: 'heterozygous' }
+                    ]
+                },
+                {
+                    name: 'Michael Johnson', age: 58, gender: 'male', condition: 'Metastatic Colorectal Carcinoma',
+                    variants: [
+                        { gene: 'KRAS', hgvs: 'p.G12V', zygosity: 'heterozygous' },
+                        { gene: 'PIK3CA', hgvs: 'p.E545K', zygosity: 'heterozygous' },
+                        { gene: 'APC', hgvs: 'p.R876*', zygosity: 'homozygous' }
+                    ]
+                },
+                {
+                    name: 'Sarah Williams', age: 45, gender: 'female', condition: 'Stage III Cutaneous Melanoma',
+                    variants: [
+                        { gene: 'BRAF', hgvs: 'p.V600E', zygosity: 'heterozygous' },
+                        { gene: 'PTEN', hgvs: 'p.R130G', zygosity: 'heterozygous' },
+                        { gene: 'CDKN2A', hgvs: 'p.R58*', zygosity: 'heterozygous' }
+                    ]
+                },
+                {
+                    name: 'Emily Davis', age: 40, gender: 'female', condition: 'Metastatic Breast Carcinoma (HR+/HER2-)',
+                    variants: [
+                        { gene: 'PIK3CA', hgvs: 'p.H1047R', zygosity: 'heterozygous' },
+                        { gene: 'ESR1', hgvs: 'p.D538G', zygosity: 'heterozygous' },
+                        { gene: 'BRCA2', hgvs: 'p.S1982fs', zygosity: 'heterozygous' }
+                    ]
+                },
+                {
+                    name: 'David Brown', age: 8, gender: 'male', condition: 'High-Risk Neuroblastoma',
+                    variants: [
+                        { gene: 'MYCN', hgvs: 'Amplification', zygosity: 'homozygous' },
+                        { gene: 'ALK', hgvs: 'p.F1174L', zygosity: 'heterozygous' }
+                    ]
+                }
+            ];
+
+            const sample = datasets[Math.floor(Math.random() * datasets.length)];
+
+            document.querySelector('[name="name"]').value = sample.name;
+            document.querySelector('[name="age"]').value = sample.age;
+            document.querySelector('[name="gender"]').value = sample.gender;
+            document.querySelector('[name="condition"]').value = sample.condition;
+
+            const variantsDiv = document.getElementById('variants');
+            variantsDiv.innerHTML = '';
+
+            sample.variants.forEach(v => {
+                const variantEl = createVariantInput();
+                variantEl.querySelector('[name="gene[]"]').value = v.gene;
+                variantEl.querySelector('[name="hgvs[]"]').value = v.hgvs;
+                variantEl.querySelector('[name="zygosity[]"]').value = v.zygosity;
+                variantsDiv.appendChild(variantEl);
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            addVariant(); // Add the first manual variant input
+        });
+    </script>
+</body>
+</html>

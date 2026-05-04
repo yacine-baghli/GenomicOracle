@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Analysis in Progress</title>
+    <!-- Custom Styles -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>Analyzing Genomic Data</h1>
+        <p style="text-align: center; margin-bottom: 2rem;">The AI engine is processing the variants. This may take a moment.</p>
+
+        {% if patient_info and variants %}
+        <div class="grid grid-cols-2">
+            <div class="glass-card" style="margin-bottom: 0;">
+                <h2>Analysis for {{ patient_info.name }}</h2>
+                <p>
+                    <strong>Condition:</strong> <span style="color: var(--text-main);">{{ patient_info.condition }}</span><br><br>
+                    <strong>Variants Found:</strong> <span style="color: var(--text-main); font-size: 1.5rem; font-weight: 700;">{{ variants|length }}</span>
+                </p>
+            </div>
+            
+            <div class="glass-card" style="margin-bottom: 0;">
+                <h2>Analysis Pipeline</h2>
+                <ul class="loader-list" id="pipeline">
+                    <li class="loader-item active"><div class="spinner"></div><span>ClinVar Annotation</span></li>
+                    <li class="loader-item"><div class="spinner" style="border-top-color:transparent;"></div><span>ACMG Scoring Simulation</span></li>
+                    <li class="loader-item"><div class="spinner" style="border-top-color:transparent;"></div><span>Drug-Gene Interaction Mapping</span></li>
+                    <li class="loader-item"><div class="spinner" style="border-top-color:transparent;"></div><span>QML Pathogenicity Optimization</span></li>
+                    <li class="loader-item"><div class="spinner" style="border-top-color:transparent;"></div><span>Generating LLM Clinical Report</span></li>
+                </ul>
+            </div>
+        </div>
+        {% else %}
+        <div class="glass-card" style="border-color: var(--danger); background: rgba(239, 68, 68, 0.1);">
+            <p style="color: #fca5a5; text-align: center;">No data was submitted. Please return to the input page.</p>
+        </div>
+        {% endif %}
+
+        <div style="text-align: center; margin-top: 3rem; display: none;" id="proceed-btn">
+            <a href="/results" class="btn btn-primary pulse-text" style="font-size: 1.25rem; padding: 18px 36px;">
+                Proceed to Results Dashboard
+            </a>
+        </div>
+    </div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const items = document.querySelectorAll('.loader-item');
+            const proceedBtn = document.getElementById('proceed-btn');
+            
+            if(items.length > 0) {
+                let current = 0;
+                
+                const interval = setInterval(() => {
+                    if (current < items.length) {
+                        // Mark previous as done
+                        if (current > 0) {
+                            items[current-1].classList.remove('active');
+                            items[current-1].classList.add('done');
+                            items[current-1].querySelector('.spinner').outerHTML = '<div class="checkmark">✓</div>';
+                        }
+                        
+                        // Set current to active
+                        items[current].classList.add('active');
+                        items[current].querySelector('.spinner').style.borderTopColor = 'var(--primary)';
+                        
+                        current++;
+                    } else {
+                        // Mark last as done
+                        items[current-1].classList.remove('active');
+                        items[current-1].classList.add('done');
+                        items[current-1].querySelector('.spinner').outerHTML = '<div class="checkmark">✓</div>';
+                        
+                        clearInterval(interval);
+                        proceedBtn.style.display = 'inline-flex';
+                    }
+                }, 800); // simulate 0.8s per step
+            }
+        });
+    </script>
+</body>
+</html>

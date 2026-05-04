@@ -1,0 +1,7 @@
+flask>=3.0
+pennylane>=0.39
+vcfpy>=0.13
+xhtml2pdf>=0.2
+google-genai>=1.0
+openai>=1.0
+anthropic>=0.30
