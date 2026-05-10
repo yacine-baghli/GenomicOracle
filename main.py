@@ -6,6 +6,8 @@ import vcfpy
 from xhtml2pdf import pisa
 from qml_module import run_qml_simulation
 from llm_module import generate_treatment_recommendations
+from vqs_client import vqs
+from ai_engine import score_case, rank_cases, generate_case_summary_llm
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
@@ -180,6 +182,87 @@ def download_pdf():
         return response
     
     return "Error generating PDF", 500
+
+# ─── Co-Pilot Dashboard ────────────────────────────────────────────────────
+
+@app.route('/copilot')
+def copilot():
+    return render_template('copilot.html')
+
+@app.route('/api/copilot/analyze', methods=['POST'])
+def copilot_analyze():
+    """Connect to VQS, fetch variants for each dataset key, score and rank."""
+    data = request.get_json()
+    username = data.get('username', '')
+    password = data.get('password', '')
+    dataset_keys = data.get('dataset_keys', [])
+    llm_provider = data.get('llm_provider', 'none')
+
+    auth_result = vqs.authenticate(username, password)
+    if not auth_result.get('success'):
+        return jsonify({"success": False, "error": f"Auth failed: {auth_result.get('error', 'Unknown')}"})
+
+    cases = {}
+    for i, key in enumerate(dataset_keys):
+        key = key.strip()
+        if not key:
+            continue
+        case_id = f"Sample {chr(65+i)} — Dataset {i+1}"
+        result = vqs.query_variants(
+            dataset_key=key, columns=["*"],
+            pagination={"offset": 0, "limit": 500},
+        )
+        if result.get("success") and result.get("data"):
+            cases[case_id] = result["data"]
+        else:
+            cases[case_id] = []
+
+    if not cases:
+        return jsonify({"success": False, "error": "No data returned from VQS for any key."})
+
+    ranked = rank_cases(cases)
+    api_key = session.get('api_key', '')
+    for case in ranked:
+        if llm_provider != 'none':
+            case['summary'] = generate_case_summary_llm(case, llm_provider, api_key)
+        else:
+            from ai_engine import _generate_fallback_summary
+            case['summary'] = _generate_fallback_summary(case)
+
+    return jsonify({"success": True, "ranked_cases": ranked})
+
+@app.route('/api/copilot/csv', methods=['POST'])
+def copilot_csv():
+    """Upload a CSV file, parse it, score and rank cases."""
+    from ai_engine import parse_csv_to_cases
+    llm_provider = request.form.get('llm_provider', 'none')
+
+    if 'csv_file' not in request.files:
+        return jsonify({"success": False, "error": "No CSV file uploaded."})
+
+    csv_file = request.files['csv_file']
+    if csv_file.filename == '':
+        return jsonify({"success": False, "error": "Empty filename."})
+
+    try:
+        csv_text = csv_file.read().decode('utf-8')
+    except UnicodeDecodeError:
+        csv_text = csv_file.read().decode('latin-1')
+
+    cases = parse_csv_to_cases(csv_text)
+    if not cases:
+        return jsonify({"success": False, "error": "No data found in CSV."})
+
+    ranked = rank_cases(cases)
+    api_key = session.get('api_key', '')
+    for case in ranked:
+        if llm_provider != 'none':
+            case['summary'] = generate_case_summary_llm(case, llm_provider, api_key)
+        else:
+            from ai_engine import _generate_fallback_summary
+            case['summary'] = _generate_fallback_summary(case)
+
+    return jsonify({"success": True, "ranked_cases": ranked})
 
 if __name__ == '__main__':
     if not os.path.exists('uploads'):
